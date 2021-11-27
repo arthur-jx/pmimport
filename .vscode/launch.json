@@ -12,7 +12,10 @@
             "mode": "auto",
             "program": "${workspaceRoot}",
             "env": {},
-            "args": ["import", "--tags=tag1,tag2"]
+            "args": ["import", "--tags=tag1",
+                "--from", "/mnt/hgfs/WinD/Photo/pmi_test_src/src/手机/Iphone_Halo.jpg",
+                "--recursive", "--model", "huawea_m6"
+            ]
         },
         {
             "name": "Testing",

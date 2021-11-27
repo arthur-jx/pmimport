@@ -3,6 +3,7 @@ module pmimport
 go 1.13
 
 require (
+	github.com/barasher/go-exiftool v1.7.0
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/lestrrat-go/strftime v1.0.5 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
