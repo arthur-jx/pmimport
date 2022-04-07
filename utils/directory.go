@@ -35,10 +35,11 @@ func CreateDir(dirs ...string) (err error) {
 			return err
 		}
 		if !exist {
-			global.LOG.Debug("create directory" + v)
 			err = os.MkdirAll(v, os.ModePerm)
 			if err != nil {
-				global.LOG.Error("create directory"+v, zap.Any(" error:", err))
+				global.LOG.Debug("Create directory", zap.String("path", v), zap.Any(" error:", err))
+			} else {
+				global.LOG.Debug("Create directory", zap.String("path", v))
 			}
 		}
 	}

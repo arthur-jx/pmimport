@@ -12,9 +12,10 @@
             "mode": "auto",
             "program": "${workspaceRoot}",
             "env": {},
-            "args": ["import", "--tags=tag1",
-                "--from", "/mnt/hgfs/WinD/Photo/pmi_test_src/src/手机/Iphone_Halo.jpg",
-                "--recursive", "--model", "huawea_m6"
+            "args": [
+                "import", "--tags=test_phopt",
+                "--from", "/mnt/hgfs/WinD/Photo/pmi_test_src/src/",
+                "--overwrite"
             ]
         },
         {

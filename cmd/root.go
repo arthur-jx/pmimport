@@ -23,6 +23,8 @@ import (
 	"go.uber.org/zap"
 
 	"pmimport/global"
+	"pmimport/initialize"
+	"pmimport/storage"
 	"pmimport/utils"
 
 	"github.com/spf13/viper"
@@ -119,4 +121,6 @@ func initConfig() {
 		fmt.Println("Storage:", global.CONFIG.Storage.Path)
 		fmt.Println("User ID:", global.CONFIG.Storage.UserId)
 	}
+
+	initialize.Zap_Init(storage.GetUserLogsFilePath())
 }

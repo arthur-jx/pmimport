@@ -18,7 +18,7 @@ var (
 	writer zapcore.WriteSyncer
 )
 
-func init() {
+func Zap_Init(logFile string) {
 	global.CONFIG.Zap.LogInConsole = true
 	if len(global.CONFIG.Zap.Director) > 0 {
 		if ok, _ := utils.PathExists(global.CONFIG.Zap.Director); !ok { // 判断是否有Director文件夹
@@ -48,7 +48,7 @@ func init() {
 		level = zap.InfoLevel
 	}
 
-	writer, err = getWriteSyncer() // 使用file-rotatelogs进行日志分割
+	writer, err = getWriteSyncer(logFile) // 使用file-rotatelogs进行日志分割
 	if err != nil {
 		fmt.Printf("Get Write Syncer Failed err:%v", err.Error())
 		return
@@ -66,13 +66,19 @@ func init() {
 }
 
 // getWriteSyncer zap logger中加入file-rotatelogs
-func getWriteSyncer() (zapcore.WriteSyncer, error) {
+func getWriteSyncer(logFile string) (zapcore.WriteSyncer, error) {
 	dir := global.CONFIG.Zap.Director
 	if len(dir) == 0 {
 		dir = "."
 	}
+	logPath := logFile
+	if len(logPath) == 0 {
+		logPath = dir + string(os.PathSeparator) + "pmi-%Y-%m-%d.log"
+	}
+	fmt.Printf("LOG file:%s\n", logPath)
+
 	fileWriter, err := zaprotatelogs.New(
-		dir+string(os.PathSeparator)+"pmi-%Y-%m-%d.log",
+		logPath,
 		zaprotatelogs.WithLinkName(global.CONFIG.Zap.LinkName),
 		zaprotatelogs.WithMaxAge(7*24*time.Hour),
 		zaprotatelogs.WithRotationTime(24*time.Hour),

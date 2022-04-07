@@ -19,12 +19,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"pmimport/global"
 	"pmimport/media"
 	"pmimport/utils"
 	"strings"
 	"time"
+
+	"pmimport/storage"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -33,11 +36,12 @@ import (
 type ImportArgs struct {
 	importFrom    string //要导入的源，可以是一个目录，以可以是一个媒体文件
 	overwrite     bool   //如果文件相同是否覆盖, 优先于rename
-	backup        bool   //如果目标文件存在，是否改名导入
+	nobackup      bool   //如果目标文件存在，是否改名
 	interactive   bool   //覆盖前是否提示
-	recursive     bool   //是否导出子目录文件
+	norecursive   bool   //不导出子目录文件
 	destroy       bool   //是否删除已导入的源文件, 优先于change参数
 	rename        bool   //是否对已导入的文件重命令，使用固定后缀
+	moveto        string //将成功导入的源文件移动到指定目录
 	useCreateDate bool   //允许导入在Exif信息中没有拍摄日期的照片，并使用创建日期作为归档日期,
 	useModel      string //对于没有相机Model信息的，使用指定的model
 	timeIsLocal   bool   //文件中的时间为本地地间
@@ -64,25 +68,16 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(importCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// importCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// importCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
 	importCmd.Flags().StringVar(&importArgs.importFrom, "from", "./", "import media source path")
 	rootCmd.MarkFlagRequired("src")
 
 	importCmd.Flags().BoolVar(&importArgs.overwrite, "overwrite", false, "remove of each existing destination file (default:true)")
-	importCmd.Flags().BoolVar(&importArgs.backup, "backup", false, "make a backup of each existing destination file")
+	importCmd.Flags().BoolVar(&importArgs.nobackup, "nobackup", false, "don't make a backup of each overwrite existing destination file")
 	importCmd.Flags().BoolVar(&importArgs.interactive, "interactive", false, "prompt before overwrite")
-	importCmd.Flags().BoolVar(&importArgs.recursive, "recursive", false, "import directories recursively")
+	importCmd.Flags().BoolVar(&importArgs.norecursive, "norecursive", false, "don't recursively import directories")
 	importCmd.Flags().BoolVar(&importArgs.destroy, "destroy", false, "destroy source file of import success")
-	importCmd.Flags().BoolVar(&importArgs.rename, "rename", false, "rename source file of import success")
+	importCmd.Flags().BoolVar(&importArgs.rename, "rename", true, "rename source file of import success")
+	importCmd.Flags().StringVar(&importArgs.moveto, "moveto", "", "move to the path of source file import success")
 
 	importCmd.Flags().BoolVar(&importArgs.useCreateDate, "use-create-date", false, "use create date import Not Exif Info photo")
 	importCmd.Flags().StringVar(&importArgs.useModel, "model", "", "setting import default model")
@@ -96,18 +91,20 @@ func init() {
 }
 
 func importCommand(cmd *cobra.Command, args []string) {
-	fmt.Println("import called")
 	if len(importArgs.importFrom) == 0 {
 		return
 	}
+
 	srcPath, err := filepath.Abs(importArgs.importFrom)
 	if err == nil {
-		fmt.Println("FORM:", srcPath)
-		importPath(srcPath, &importArgs)
+		global.LOG.Info("IMPORT TIME:", zap.Time("time", time.Now()))
+		global.LOG.Info("FORM:", zap.String("path:", srcPath))
+		global.LOG.Info("User:", zap.String("id", global.CONFIG.Storage.UserId))
+		importPath(srcPath, srcPath, &importArgs)
 	}
 }
 
-func importPath(srcPath string, args *ImportArgs) (err error) {
+func importPath(srcPath string, fromPath string, args *ImportArgs) (err error) {
 	if ok, e := utils.PathExists(srcPath); !ok {
 		err = e
 		global.LOG.Error("Source media path is don't exists", zap.String("path", srcPath))
@@ -122,33 +119,109 @@ func importPath(srcPath string, args *ImportArgs) (err error) {
 			for _, info := range entrys {
 				nextName := srcPath + string(os.PathSeparator) + info.Name()
 				if info.IsDir() {
-					if args.recursive {
-						importPath(nextName, args)
+					if !args.norecursive {
+						importPath(nextName, fromPath, args)
 					}
 				} else {
-					ImportFile(nextName, args)
+					srcFileFull := strings.Replace(nextName, fromPath, "", 1)
+					ImportFile(nextName, srcFileFull, args)
 				}
 			}
 		}
 	} else {
-		ImportFile(srcPath, args)
+		srcFileFull := strings.Replace(srcPath, fromPath, "", 1)
+		ImportFile(srcPath, srcFileFull, args)
 	}
 
 	return nil
 }
 
-func ImportFile(filePath string, args *ImportArgs) (err error) {
-	fmt.Println("Import:", filePath)
-	createTime, tags, err := getFileTimeAndTags(filePath)
+//filePath: 导入文件的全路径
+//srcFileFull: 导入文件不含ＦＯＲＭ根目录的路径
+func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error) {
+	global.LOG.Debug("Import", zap.String("path", srcFile))
+	createTime, tags, err := getFileTimeAndTags(srcFile)
 	if err == nil {
-		fmt.Printf("   -> file info:   %v \t [%v]\n", createTime.Local().Format("2006-01-02 15:04:05"), tags)
+		global.LOG.Debug("file info", zap.Any("time", createTime.Local().Format("2006-01-02 15:04:05")), zap.Any("tags", tags))
 
-		//TODO:: move or copy file to storage
+		mod := ""
+		srcExtMode := ""
+		destExtMode := ""
+
+		importPath := storage.GetImportStoragePath(createTime)
+		targetPath := ""
+		targetName := "" //不含库路径的导入路径文件名
+		//get file sha256
+		filesha, e := utils.GetFileSHA1(srcFile)
+		if e == nil {
+
+			targetPath = path.Join(importPath, filesha+path.Ext(srcFile))
+			targetName = strings.Replace(targetPath, storage.GetUserStoragePath(), "", 1)
+
+			if storage.FileExist(targetPath) {
+				if importArgs.overwrite {
+					//文件已存在
+					if !importArgs.nobackup {
+						//备份目标文件
+						newName := strings.Replace(path.Base(targetPath), path.Ext(targetPath), "", 1) +
+							time.Now().Format("_20060102150405999") + path.Ext(targetPath)
+						err := storage.RenameFile(targetPath, path.Join(path.Dir(targetPath), newName))
+						global.LOG.Debug("[RENAME]", zap.String("old name", targetName), zap.String("new name", newName), zap.Error(err))
+						destExtMode = "RENAME"
+					} else {
+						//覆盖目标文件
+						destExtMode = "OVER"
+					}
+				} else {
+					global.LOG.Info("[NO]", zap.String("src", srcFileFull), zap.String("dest", targetName), zap.Any("error", "dest file is exist."))
+					return fmt.Errorf("media file exist in storage")
+				}
+			}
+
+			//create dir
+			// if !storage.PathIsDir(importPath) {
+			// 	if !storage.CreateMediaDir(global.CONFIG.Storage.Path, createTime) {
+			// 		global.LOG.Debug("Create target dir", zap.String("ERR", "con't create dir"))
+			// 		return fmt.Errorf("con't create dir")
+			// 	}
+			// }
+
+			isCopy := false //文件是否已复制
+			//copy file
+			err := storage.CopyFile(srcFile, targetPath)
+			if err != nil {
+				global.LOG.Error("[COPY]", zap.String("src", srcFileFull), zap.String("dest", targetName), zap.String("Error", err.Error()))
+				return err
+			} else {
+				mod = "[COPY]"
+				isCopy = true
+			}
+
+			if isCopy {
+				//remove OR rename source file
+				if importArgs.destroy {
+					//TODO:: remove
+					srcExtMode = "REMOVE"
+				} else {
+					if importArgs.rename {
+						//rename source file
+						newName := "import-" + strings.Replace(path.Base(srcFile), path.Ext(srcFile), "", 1) +
+							time.Now().Format("_20060102150405999") + path.Ext(srcFile)
+						err := storage.RenameFile(srcFile, path.Join(path.Dir(srcFile), newName))
+						if err != nil {
+							srcExtMode = "RENAME_ERR"
+						} else {
+							srcExtMode = "RENAME"
+						}
+					}
+				}
+			}
+			global.LOG.Info(mod, zap.String("src", srcExtMode+">"+srcFileFull), zap.String("dest", destExtMode+">"+targetName))
+		}
 	} else {
-		fmt.Printf("   -> ERR:%v\n", err.Error())
+		global.LOG.Info("[NO]", zap.String("src", srcFileFull), zap.String("error", err.Error()))
 	}
 
-	fmt.Println("    FAIL")
 	return nil
 }
 
@@ -185,7 +258,8 @@ func getFileTimeAndTags(filePath string) (createTime time.Time, tags string, err
 		}
 	}
 
-	fmt.Printf("   -> Exif Info:[%s]\t[%s]\t[%s]\t[%s]\n", Model, CreateDate, OffsetTimeOriginal, LensModel)
+	global.LOG.Debug("Exif Info", zap.String("Model", Model), zap.String("CreateDate", CreateDate),
+		zap.String("Timezone", OffsetTimeOriginal), zap.String("LensModel", LensModel))
 
 	if len(Model) > 0 {
 		tags += Model
