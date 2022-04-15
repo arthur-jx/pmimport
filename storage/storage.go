@@ -101,6 +101,21 @@ func GetUserStoragePath() string {
 	return fmt.Sprintf("%s/%s", global.CONFIG.Storage.Path, global.CONFIG.Storage.UserId)
 }
 
+func GetUserMediaFilePath() string {
+	path := fmt.Sprintf("%s/media", GetUserStoragePath())
+
+	if ok, _ := utils.PathExists(path); !ok {
+		dirs := []string{path}
+		err := utils.CreateDir(dirs...)
+		if err != nil {
+			fmt.Printf("Open log file error:%s", err.Error())
+			os.Exit(1)
+		}
+	}
+
+	return path
+}
+
 func GetUserLogsFilePath() string {
 	path := fmt.Sprintf("%s/logs", GetUserStoragePath())
 

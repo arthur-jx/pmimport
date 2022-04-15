@@ -5,6 +5,7 @@ import (
 )
 
 var (
-	CONFIG Config
-	LOG    *zap.Logger
+	CONFIG    Config
+	LOG       *zap.Logger
+	TagsSplit string = ";"
 )

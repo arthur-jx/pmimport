@@ -89,3 +89,16 @@ func GetExifInfoString(info map[string]interface{}, key string) (string, bool) {
 
 	return "", false
 }
+
+func GetExifLanLong(info map[string]interface{}) (string, bool) {
+	v, ok := info["GPSPosition"]
+	if ok {
+		switch v.(type) {
+		case string:
+			return v.(string), true
+			break
+		}
+	}
+
+	return "", false
+}
