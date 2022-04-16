@@ -63,8 +63,11 @@ func addCommand(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dirs := []string{userPath + string(os.PathSeparator) + "media",
-		userPath + string(os.PathSeparator) + "photo_album"}
+	dirs := []string{
+		userPath + string(os.PathSeparator) + "media",
+		userPath + string(os.PathSeparator) + "photo_album",
+		userPath + string(os.PathSeparator) + "logs",
+	}
 	utils.CreateDir(dirs...)
 
 	fmt.Println("User create SUCCESS")

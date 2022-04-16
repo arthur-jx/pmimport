@@ -3,6 +3,7 @@ package initialize
 import (
 	"fmt"
 	"os"
+	"path"
 	"pmimport/global"
 	"pmimport/utils"
 	"time"
@@ -20,6 +21,9 @@ var (
 
 func Zap_Init(logFile string) {
 	global.CONFIG.Zap.LogInConsole = true
+	if len(logFile) > 0 {
+		global.CONFIG.Zap.Director = path.Dir(logFile)
+	}
 	if len(global.CONFIG.Zap.Director) > 0 {
 		if ok, _ := utils.PathExists(global.CONFIG.Zap.Director); !ok { // 判断是否有Director文件夹
 			if len(global.CONFIG.Zap.Director) > 0 {
@@ -67,6 +71,11 @@ func Zap_Init(logFile string) {
 
 // getWriteSyncer zap logger中加入file-rotatelogs
 func getWriteSyncer(logFile string) (zapcore.WriteSyncer, error) {
+	if len(logFile) == 0 {
+		//Console only
+		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout)), err
+	}
+
 	dir := global.CONFIG.Zap.Director
 	if len(dir) == 0 {
 		dir = "."
@@ -83,10 +92,12 @@ func getWriteSyncer(logFile string) (zapcore.WriteSyncer, error) {
 		zaprotatelogs.WithMaxAge(7*24*time.Hour),
 		zaprotatelogs.WithRotationTime(24*time.Hour),
 	)
+
 	if global.CONFIG.Zap.LogInConsole {
 		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(fileWriter)), err
+	} else {
+		return zapcore.AddSync(fileWriter), err
 	}
-	return zapcore.AddSync(fileWriter), err
 }
 
 // getEncoderConfig 获取zapcore.EncoderConfig

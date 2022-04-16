@@ -120,12 +120,7 @@ func GetUserLogsFilePath() string {
 	path := fmt.Sprintf("%s/logs", GetUserStoragePath())
 
 	if ok, _ := utils.PathExists(path); !ok {
-		dirs := []string{path}
-		err := utils.CreateDir(dirs...)
-		if err != nil {
-			fmt.Printf("Open log file error:%s", err.Error())
-			os.Exit(1)
-		}
+		return ""
 	}
 
 	path += fmt.Sprintf("/import_%s.log", time.Now().Local().Format("20060102_150405"))

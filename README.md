@@ -96,6 +96,19 @@ storge_dir/                #存储根目录
 
 ##　基本使用
 
+- 创建用户
+
+  1. 创建配置文件pmi.yaml
+  1. 设置好存储库目录路径
+  1. 设置 userid
+
+  ```bash
+  # 创建用户
+  pmimport adduser
+  ```
+
+  
+
 - 导入指定目录下的文件到媒体库，重复的文件不做操作
 
   ```bash
@@ -131,6 +144,22 @@ storge_dir/                #存储根目录
 
   ```bash
   pmimport import --tags "test_photo;tags2"  --model="Canon"  --from=~/files/
+  ```
+
+  
+
+### 文件查询
+
+- 通过信息文件做基本的照片查询
+
+  ```bash
+  # 查询所有包含"北京"的文件
+  
+  # Windows Power shell
+  findstr /s /i "北京" *.json
+  
+  # Linux
+  find ./ -name "*info.json" |xargs grep "北京"
   ```
 
   
