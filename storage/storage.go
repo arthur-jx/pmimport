@@ -7,6 +7,7 @@ import (
 	"path"
 	"pmimport/global"
 	"pmimport/utils"
+	"strings"
 	"time"
 )
 
@@ -44,7 +45,7 @@ func PathIsDir(path string) bool {
 // 	return false
 // }
 
-func CopyFile(src, dest string) error {
+func CopyFile(src, dest, fileHash string) error {
 	sourceFileStat, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -70,11 +71,21 @@ func CopyFile(src, dest string) error {
 		return err
 	}
 
-	defer destination.Close()
-
 	size, err := io.Copy(destination, source)
+	destination.Close()
+
 	if size != sourceFileStat.Size() {
 		err = fmt.Errorf("copy file fail.")
+	} else {
+		//verify target file Hash
+		newHash, e := utils.GetFileSHA1(dest)
+		if e == nil {
+			if strings.Compare(newHash, fileHash) != 0 {
+				err = fmt.Errorf("copy file verify fail.")
+			}
+		} else {
+			err = fmt.Errorf("copy file verify fail.")
+		}
 	}
 
 	return err
