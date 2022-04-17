@@ -94,7 +94,7 @@ storge_dir/                #存储根目录
   - storage.path: 文件仓库的根目录路径
   - storage.userid: 当前导入操作的用户的id
 
-##　基本使用
+## 基本使用
 
 - 创建用户
 
