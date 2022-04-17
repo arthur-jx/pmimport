@@ -39,12 +39,12 @@ type ImportArgs struct {
 	overwrite     bool   //如果文件相同是否覆盖, 优先于rename
 	nobackup      bool   //如果目标文件存在，是否改名
 	interactive   bool   //覆盖前是否提示
-	norecursive   bool   //不导出子目录文件
+	recursive     bool   //递归导出子目录文件
 	destroy       bool   //是否删除已导入的源文件, 优先于change参数
 	rename        bool   //是否对已导入的文件重命令，使用固定后缀
 	moveto        string //将成功导入的源文件移动到指定目录
 	excludeFile   string //不导入指定文件名前缀的文件
-	useCreateDate bool   //允许导入在Exif信息中没有拍摄日期的照片，并使用创建日期作为归档日期,
+	setCreateTime string //导入在Exif信息中没有拍摄日期的照片时，使用指定日期作为归档日期,
 	useModel      string //对于没有相机Model信息的，使用指定的model
 	timeIsLocal   bool   //文件中的时间为本地地间
 	tags          string //文件的标签
@@ -76,16 +76,16 @@ func init() {
 	importCmd.Flags().BoolVar(&importArgs.overwrite, "overwrite", false, "remove of each existing destination file (default:true)")
 	importCmd.Flags().BoolVar(&importArgs.nobackup, "nobackup", false, "don't make a backup of each overwrite existing destination file")
 	importCmd.Flags().BoolVar(&importArgs.interactive, "interactive", false, "prompt before overwrite")
-	importCmd.Flags().BoolVar(&importArgs.norecursive, "norecursive", false, "don't recursively import directories")
+	importCmd.Flags().BoolVar(&importArgs.recursive, "recursive", false, "recursively import subdirectories")
 	importCmd.Flags().BoolVar(&importArgs.destroy, "destroy", false, "destroy source file of import success")
 	importCmd.Flags().BoolVar(&importArgs.rename, "rename", false, "rename source file of import success")
 	importCmd.Flags().StringVar(&importArgs.moveto, "moveto", "", "move to the path of source file import success")
 
 	importCmd.Flags().StringVar(&importArgs.excludeFile, "exclude-file", "", "exclude file with spacified filename prefix")
 
-	importCmd.Flags().BoolVar(&importArgs.useCreateDate, "use-create-date", false, "use create date import Not Exif Info photo")
+	importCmd.Flags().StringVar(&importArgs.setCreateTime, "set-create-time", "", "set time with import file, format: YYYY-MM-DDTmm:hh:ss")
 	importCmd.Flags().StringVar(&importArgs.useModel, "model", "", "setting import default model")
-	importCmd.Flags().BoolVar(&importArgs.timeIsLocal, "islocaltime", false, "media time is local")
+	importCmd.Flags().BoolVar(&importArgs.timeIsLocal, "islocaltime", true, "media time is local")
 
 	importCmd.Flags().StringVar(&importArgs.tags, "tags", "", "tags for media files")
 	importCmd.MarkFlagRequired("tags")
@@ -129,7 +129,7 @@ func importPath(srcPath string, fromPath string, args *ImportArgs) (err error) {
 			for _, info := range entrys {
 				nextName := srcPath + string(os.PathSeparator) + info.Name()
 				if info.IsDir() {
-					if !args.norecursive {
+					if args.recursive {
 						importPath(nextName, fromPath, args)
 					}
 				} else {
@@ -140,6 +140,9 @@ func importPath(srcPath string, fromPath string, args *ImportArgs) (err error) {
 		}
 	} else {
 		srcFileFull := strings.Replace(srcPath, fromPath, "", 1)
+		if len(srcFileFull) == 0 {
+			srcFileFull = path.Base(srcPath)
+		}
 		ImportFile(srcPath, srcFileFull, args)
 	}
 
@@ -159,7 +162,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 		}
 	}
 
-	mediaInfo, err := getFileInfos(srcFile)
+	mediaInfo, err := getFileInfos(srcFile, args)
 	if err == nil {
 		global.LOG.Debug("file info", zap.Any("time", mediaInfo.CreateTime.Local().Format("2006-01-02 15:04:05")), zap.Any("model", mediaInfo.Model))
 
@@ -205,7 +208,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 
 			if hasCopy {
 				//copy file
-				err := storage.CopyFile(srcFile, targetPath)
+				err := storage.CopyFile(srcFile, targetPath, filesha)
 				if err != nil {
 					global.LOG.Error("[COPY]", zap.String("src", srcFileFull), zap.String("dest", targetName), zap.String("Error", err.Error()))
 					return err
@@ -232,8 +235,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 				} else {
 					if importArgs.rename {
 						//rename source file
-						newName := "import-" + strings.Replace(path.Base(srcFile), path.Ext(srcFile), "", 1) +
-							time.Now().Format("_20060102150405999") + path.Ext(srcFile)
+						newName := "import-" + strings.Replace(path.Base(srcFile), path.Ext(srcFile), "", 1) + path.Ext(srcFile)
 						err := storage.RenameFile(srcFile, path.Join(path.Dir(srcFile), newName))
 						if err != nil {
 							srcExtMode = "RENAME_ERR"
@@ -298,7 +300,7 @@ func updateMediaInfoFiles(mediaPath string, info *media.MediaFileInfo) {
 	}
 }
 
-func getFileInfos(filePath string) (info *media.MediaFileInfo, err error) {
+func getFileInfos(filePath string, args *ImportArgs) (info *media.MediaFileInfo, err error) {
 	exif, e := media.GetExif(filePath)
 	if e != nil {
 		err = e
@@ -307,77 +309,100 @@ func getFileInfos(filePath string) (info *media.MediaFileInfo, err error) {
 
 	var fileInfo media.MediaFileInfo
 
-	//Get field: Model, CreateDate, OffsetTimeOriginal,LensModel
 	Model, _ := media.GetExifInfoString(exif, "Model")
-
-	OffsetTimeOriginal, _ := media.GetExifInfoString(exif, "OffsetTimeOriginal")
-	//视频文件读取CreationDate
-	CreateDate, ok := media.GetExifInfoString(exif, "CreationDate")
-	if !ok {
-		CreateDate, _ = media.GetExifInfoString(exif, "CreateDate")
-	}
-	//提取时区标记
-	pos := strings.Index(CreateDate, "+")
-	if pos > 0 {
-		if len(OffsetTimeOriginal) == 0 {
-			OffsetTimeOriginal = CreateDate[pos:]
-		}
-		CreateDate = CreateDate[0:pos]
-	}
-
-	LensModel, _ := media.GetExifInfoString(exif, "LensModel")
-
 	if len(Model) == 0 {
 		if len(importArgs.useModel) > 0 {
 			Model = importArgs.useModel
 		}
 	}
 
-	global.LOG.Debug("Exif Info", zap.String("Model", Model), zap.String("CreateDate", CreateDate),
-		zap.String("Timezone", OffsetTimeOriginal), zap.String("LensModel", LensModel))
+	LensModel, _ := media.GetExifInfoString(exif, "LensModel")
 
-	if len(Model) > 0 {
-		// tags += Model
-		// if len(LensModel) > 0 {
-		// 	tags += "," + LensModel
-		// }
-		// tags = strings.Replace(tags, " ", "_", -1)
-	} else {
+	if len(Model) == 0 {
 		err = fmt.Errorf("invalid photo model")
 		return
 	}
 
-	if len(CreateDate) > 0 {
-		layout := "2006:01:02 15:04:05"
-		if len(OffsetTimeOriginal) > 0 {
-			layout += "-07:00"
-			CreateDate += OffsetTimeOriginal
+	//Get field: Model, CreateDate, OffsetTimeOriginal,LensModel
+	var fileTime time.Time
+	if len(args.setCreateTime) > 0 {
+		if "now" == args.setCreateTime {
+			fileTime = time.Now()
 		} else {
-			if importArgs.timeIsLocal {
-				layout += "-07:00"
-				CreateDate += "+08:00"
+			var err error
+			loc, _ := time.LoadLocation("Local")
+			fileTime, err = time.ParseInLocation("2006-1-2T15:4:5", args.setCreateTime, loc)
+			if err != nil {
+				return nil, fmt.Errorf("set create date invalid:%s", args.setCreateTime)
 			}
 		}
+	} else {
+		OffsetTimeOriginal, _ := media.GetExifInfoString(exif, "OffsetTimeOriginal")
+		//视频文件读取CreationDate
+		CreateDate, ok := media.GetExifInfoString(exif, "CreationDate")
+		if !ok {
+			CreateDate, _ = media.GetExifInfoString(exif, "CreateDate")
+		}
+		//提取时区标记
+		pos := strings.Index(CreateDate, "+")
+		if pos > 0 {
+			if len(OffsetTimeOriginal) == 0 {
+				OffsetTimeOriginal = CreateDate[pos:]
+			}
+			CreateDate = CreateDate[0:pos]
+		}
 
-		ctime, e := time.Parse(layout, CreateDate)
-		if e == nil {
-			//信息至少应该有日期和相机型号
-			if len(Model) > 0 {
-				fileInfo.CreateTime = ctime
-				fileInfo.Model = Model
-				fileInfo.LensModel = LensModel
+		if len(CreateDate) > 0 {
+			useLocTime := false
+			layout := "2006:01:02 15:04:05"
+			if len(OffsetTimeOriginal) > 0 {
+				layout += "-07:00"
+				CreateDate += OffsetTimeOriginal
+			} else {
+				if importArgs.timeIsLocal {
+					useLocTime = true
+					// layout += "-07:00"
+					// CreateDate += "+08:00"
+				}
+			}
 
-				latLong, _ := media.GetExifLanLong(exif)
+			global.LOG.Debug("Exif Info", zap.String("Model", Model), zap.String("CreateDate", CreateDate),
+				zap.String("Timezone", OffsetTimeOriginal), zap.String("LensModel", LensModel))
 
-				fileInfo.LatLong = latLong
-
-				info = &fileInfo
-				err = nil
-				return
+			var ctime time.Time
+			var e error
+			if useLocTime {
+				loc := time.Now().Location()
+				ctime, e = time.ParseInLocation(layout, CreateDate, loc)
+			} else {
+				ctime, e = time.Parse(layout, CreateDate)
+			}
+			if e == nil {
+				fileTime = ctime
+			} else {
+				return nil, fmt.Errorf("invalid photo time")
 			}
 		}
 	}
-	err = fmt.Errorf("invalid photo time")
 
-	return
+	if !fileTime.IsZero() {
+		//信息至少应该有日期和相机型号
+		if len(Model) > 0 {
+			fileInfo.CreateTime = fileTime
+			fileInfo.Model = Model
+			fileInfo.LensModel = LensModel
+
+			latLong, _ := media.GetExifLanLong(exif)
+
+			fileInfo.LatLong = latLong
+
+			info = &fileInfo
+			err = nil
+			return
+		} else {
+			return nil, fmt.Errorf("invalid photo model")
+		}
+	} else {
+		return nil, fmt.Errorf("invalid photo time")
+	}
 }
