@@ -3,7 +3,7 @@ package initialize
 import (
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"pmimport/global"
 	"pmimport/utils"
 	"time"
@@ -22,7 +22,7 @@ var (
 func Zap_Init(logFile string) {
 	global.CONFIG.Zap.LogInConsole = true
 	if len(logFile) > 0 {
-		global.CONFIG.Zap.Director = path.Dir(logFile)
+		global.CONFIG.Zap.Director = filepath.Dir(logFile)
 	}
 	if len(global.CONFIG.Zap.Director) > 0 {
 		if ok, _ := utils.PathExists(global.CONFIG.Zap.Director); !ok { // 判断是否有Director文件夹

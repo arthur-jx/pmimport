@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"pmimport/global"
 	"pmimport/utils"
 	"strings"
@@ -61,7 +61,7 @@ func CopyFile(src, dest, fileHash string) error {
 	}
 	defer source.Close()
 
-	destDir := path.Dir(dest)
+	destDir := filepath.Dir(dest)
 	if ok, _ := utils.PathExists(destDir); !ok {
 		utils.CreateDir(destDir)
 	}

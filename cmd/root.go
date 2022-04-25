@@ -98,29 +98,33 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
+	err := viper.ReadInConfig()
+	if err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 
 		viper.Unmarshal(&global.CONFIG)
 
-		if len(global.CONFIG.Storage.Path) == 0 {
-			global.LOG.Error("Storage path is empty")
-			os.Exit(0)
-		}
-		if len(global.CONFIG.Storage.UserId) == 0 {
-			global.LOG.Error("Storage user Id is empty")
-			os.Exit(0)
-		}
+		initialize.Zap_Init(storage.GetUserLogsFilePath())
 
-		ok, err := utils.PathExists(global.CONFIG.Storage.Path)
-		if err != nil || !ok {
-			global.LOG.Error("Storage path don't exists", zap.String("path", global.CONFIG.Storage.Path))
-			os.Exit(0)
-		}
-
-		fmt.Println("Storage:", global.CONFIG.Storage.Path)
-		fmt.Println("User ID:", global.CONFIG.Storage.UserId)
+	} else {
+		initialize.Zap_Init("")
 	}
 
-	initialize.Zap_Init(storage.GetUserLogsFilePath())
+	if len(global.CONFIG.Storage.Path) == 0 {
+		global.LOG.Error("Storage path is empty")
+		os.Exit(0)
+	}
+	if len(global.CONFIG.Storage.UserId) == 0 {
+		global.LOG.Error("Storage user Id is empty")
+		os.Exit(0)
+	}
+
+	ok, err := utils.PathExists(global.CONFIG.Storage.Path)
+	if err != nil || !ok {
+		global.LOG.Error("Storage path don't exists", zap.String("path", global.CONFIG.Storage.Path))
+		os.Exit(0)
+	}
+
+	fmt.Println("Storage:", global.CONFIG.Storage.Path)
+	fmt.Println("User ID:", global.CONFIG.Storage.UserId)
 }

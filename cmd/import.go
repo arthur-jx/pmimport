@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"pmimport/global"
 	"pmimport/media"
@@ -141,7 +140,7 @@ func importPath(srcPath string, fromPath string, args *ImportArgs) (err error) {
 	} else {
 		srcFileFull := strings.Replace(srcPath, fromPath, "", 1)
 		if len(srcFileFull) == 0 {
-			srcFileFull = path.Base(srcPath)
+			srcFileFull = filepath.Base(srcPath)
 		}
 		ImportFile(srcPath, srcFileFull, args)
 	}
@@ -155,7 +154,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 	global.LOG.Debug("Import", zap.String("path", srcFile))
 
 	if len(args.excludeFile) > 0 {
-		fileName := path.Base(srcFile)
+		fileName := filepath.Base(srcFile)
 		if strings.HasPrefix(fileName, args.excludeFile) {
 			global.LOG.Info("[SKIP]", zap.String("src", srcFileFull))
 			return nil
@@ -172,6 +171,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 		destExtMode := ""
 
 		importPath := storage.GetImportStoragePath(mediaInfo.CreateTime)
+		global.LOG.Debug("file storage path", zap.String("path", importPath))
 		targetPath := ""
 		targetName := "" //不含库路径的导入路径文件名
 		//get file sha256
@@ -179,7 +179,7 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 		if e == nil {
 			mediaInfo.FileHash = filesha
 
-			targetPath = path.Join(importPath, filesha+path.Ext(srcFile))
+			targetPath = filepath.Join(importPath, filesha+filepath.Ext(srcFile))
 			targetName = strings.Replace(targetPath, storage.GetUserStoragePath(), "", 1)
 
 			hasCopy := true //是否需要复制源文件
@@ -188,9 +188,9 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 					//文件已存在
 					if !importArgs.nobackup {
 						//备份目标文件
-						newName := strings.Replace(path.Base(targetPath), path.Ext(targetPath), "", 1) +
-							time.Now().Format("_20060102150405999") + path.Ext(targetPath)
-						err := storage.RenameFile(targetPath, path.Join(path.Dir(targetPath), newName))
+						newName := strings.Replace(filepath.Base(targetPath), filepath.Ext(targetPath), "", 1) +
+							time.Now().Format("_20060102150405999") + filepath.Ext(targetPath)
+						err := storage.RenameFile(targetPath, filepath.Join(filepath.Dir(targetPath), newName))
 						global.LOG.Debug("[RENAME]", zap.String("old name", targetName), zap.String("new name", newName), zap.Error(err))
 						destExtMode = "BAK"
 					} else {
@@ -235,10 +235,12 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 				} else {
 					if importArgs.rename {
 						//rename source file
-						newName := "import-" + strings.Replace(path.Base(srcFile), path.Ext(srcFile), "", 1) + path.Ext(srcFile)
-						err := storage.RenameFile(srcFile, path.Join(path.Dir(srcFile), newName))
+						global.LOG.Debug("rename file", zap.String("path", filepath.Dir(srcFile)), zap.String("base", filepath.Base(srcFile)), zap.String("ext", filepath.Ext(srcFile)))
+						newName := "import-" + strings.Replace(filepath.Base(srcFile), filepath.Ext(srcFile), "", 1) + filepath.Ext(srcFile)
+						err := storage.RenameFile(srcFile, filepath.Join(filepath.Dir(srcFile), newName))
 						if err != nil {
 							srcExtMode = "RENAME_ERR"
+							global.LOG.Info("rename src file error", zap.Error(err))
 						} else {
 							srcExtMode = "RENAME"
 						}
@@ -257,10 +259,10 @@ func ImportFile(srcFile string, srcFileFull string, args *ImportArgs) (err error
 
 //保存媒体信息文件，目录已经有文件了，就合并文件中对应的字段
 func updateMediaInfoFiles(mediaPath string, info *media.MediaFileInfo) {
-	fileName := path.Base(mediaPath)
-	fileName = strings.Replace(fileName, path.Ext(mediaPath), "", 1)
+	fileName := filepath.Base(mediaPath)
+	fileName = strings.Replace(fileName, filepath.Ext(mediaPath), "", 1)
 
-	filePath := path.Join(path.Dir(mediaPath), fileName+"_info.json")
+	filePath := filepath.Join(filepath.Dir(mediaPath), fileName+"_info.json")
 
 	if storage.FileExist(filePath) {
 		//load old info
@@ -306,6 +308,8 @@ func getFileInfos(filePath string, args *ImportArgs) (info *media.MediaFileInfo,
 		err = e
 		return
 	}
+
+	global.LOG.Debug("Media Info", zap.Any("exif", exif))
 
 	var fileInfo media.MediaFileInfo
 
