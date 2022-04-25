@@ -342,10 +342,13 @@ func getFileInfos(filePath string, args *ImportArgs) (info *media.MediaFileInfo,
 		}
 	} else {
 		OffsetTimeOriginal, _ := media.GetExifInfoString(exif, "OffsetTimeOriginal")
-		//视频文件读取CreationDate
-		CreateDate, ok := media.GetExifInfoString(exif, "CreationDate")
+		CreateDate, ok := media.GetExifInfoString(exif, "DateTimeOriginal")
 		if !ok {
-			CreateDate, _ = media.GetExifInfoString(exif, "CreateDate")
+			//视频文件读取CreationDate
+			CreateDate, ok = media.GetExifInfoString(exif, "FileModifyDate")
+			if !ok {
+				// CreateDate, _ = media.GetExifInfoString(exif, "CreateDate")
+			}
 		}
 		//提取时区标记
 		pos := strings.Index(CreateDate, "+")
